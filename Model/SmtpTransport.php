@@ -37,12 +37,23 @@ class SmtpTransport extends Swift_SmtpTransport {
     }
 
     public function send(Swift_Mime_Message $message, &$failedRecipients = null) {
+        //create an event with the transport and message
         $event = $this->makeTransportSendEvent();
         $event->setMessage($message);
         $event->setTransport($this);
-        $this->getEventDispatcher()->dispatch('tdm.swiftmailer.transport.pre_send', $event);
+
+        //dispatch the pre send events
+        $this->getEventDispatcher()->dispatch('tdm.swiftmailer.transport.pre_send_process', $event);
+        $this->getEventDispatcher()->dispatch('tdm.swiftmailer.transport.pre_send_cleanup', $event);
+
+        //call the parent method
         $return = parent::send($message, $failedRecipients);
-        $this->getEventDispatcher()->dispatch('tdm.swiftmailer.transport.post_send', $event);
+
+        //dispatch the post send events
+        $this->getEventDispatcher()->dispatch('tdm.swiftmailer.transport.post_send_process', $event);
+        $this->getEventDispatcher()->dispatch('tdm.swiftmailer.transport.post_send_cleanup', $event);
+
+        //return the parent method result
         return $return;
     }
 

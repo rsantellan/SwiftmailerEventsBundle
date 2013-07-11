@@ -40,10 +40,20 @@ class Mailer extends Swift_Mailer {
         //make a new event so message can be modified.
         $event = $this->makeMailerSendEvent();
         $event->setMessage($message);
-        $this->getEventDispatcher()->dispatch('tdm.swiftmailer.mailer.send', $event);
+
+        //dispatch the pre send events
+        $this->getEventDispatcher()->dispatch('tdm.swiftmailer.mailer.pre_send_process', $event);
+        $this->getEventDispatcher()->dispatch('tdm.swiftmailer.mailer.pre_send_cleanup', $event);
 
         //now call the parent function
-        return parent::send($message, $failedRecipients);
+        $return = parent::send($message, $failedRecipients);
+
+        //dispatch the post send events
+        $this->getEventDispatcher()->dispatch('tdm.swiftmailer.mailer.post_send_process', $event);
+        $this->getEventDispatcher()->dispatch('tdm.swiftmailer.mailer.post_send_cleanup', $event);
+
+        //return the parent functions result
+        return $return;
     }
 
 }

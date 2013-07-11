@@ -17,12 +17,27 @@ class Message extends Swift_Message {
      * 
      * @return array
      */
-    public function getAdditionalData() {
+    public function getAdditionalDataAll() {
         return $this->additionalData;
+    }
+
+    public function getAdditionalData($key) {
+        if ($this->hasAdditionalData($key))
+            return $this->additionalData[$key];
+        return NULL;
     }
 
     public function setAdditionalData($key, $value) {
         $this->additionalData[$key] = $value;
+    }
+
+    public function hasAdditionalData($key) {
+        return array_key_exists($key, $this->additionalData);
+    }
+
+    public function removeAdditionalData($key) {
+        if ($this->hasAdditionalData($key))
+            unset($this->additionalData[$key]);
     }
 
 }
