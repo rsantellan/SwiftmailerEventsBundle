@@ -64,4 +64,129 @@ Events Dispatching was added to the Mailer and SmtpTransport classes.  The event
 
 ## Example ##
 
-If we want to allow 
+If we want to allow the system to specify the SMTP server connection information when a message is created we can do so while still making use of the file spooler.  This is useful for SaaS sites that need to allow for white-labeling.
+
+1) We create a listener file that houses all the aspects of our listener.  For our purposes we are going to assume that the variable ```$connectionSettings``` is an array with a bunch of connection settings in it.  This would need to be passed in or derived from a user or a domain in the real world.
+```php
+<?php
+
+namespace Namespace\Bundle\Listener;
+
+use TDM\SwiftMailerEventBundle\Events\MailerSendEvent;
+use TDM\SwiftMailerEventBundle\Events\TransportSendEvent;
+use TDM\SwiftMailerEventBundle\Model\Message;
+use TDM\SwiftMailerEventBundle\Model\SmtpTransport;
+
+class EmailSendListener {
+
+    private $storedValues = array();
+
+    public function mailerSend(MailerSendEvent $event) {
+        $message = $event->getMessage();
+        if (!$message instanceof Message)
+            return;
+
+        $message->setAdditionalData('AuthMode', $connectionSettings['AuthMode']);
+        $message->setAdditionalData('Encryption', $connectionSettings['Encryption']);
+        $message->setAdditionalData('Host', $connectionSettings['Host']);
+        $message->setAdditionalData('Password', $connectionSettings['Password']);
+        $message->setAdditionalData('Port', $connectionSettings['Port']);
+        $message->setAdditionalData('UserName', $connectionSettings['UserName']);
+
+        $message->setFrom(array(
+            $connectionSettings['FromAddress'] => $connectionSettings['FromName'],
+        ));
+    }
+
+    public function mailerSendCleanup(MailerSendEvent $event) {
+        $message = $event->getMessage();
+        if (!$message instanceof Message)
+            return;
+
+        //remove any data you don't want to be serialized here.  For our purposes, we don't need to remove anything now.
+    }
+
+    public function transportSendPre(TransportSendEvent $event) {
+        $message = $event->getMessage();
+        if (!$message instanceof Message)
+            return;
+
+        $transport = $event->getTransport();
+        if (!$transport instanceof SmtpTransport)
+            return;
+
+        //make sure all settings are added to message.
+        foreach (array('AuthMode', 'Encryption', 'Host', 'Password', 'Port', 'UserName') as $settingName)
+            if (!$message->hasAdditionalData($settingName))
+                return;
+
+        //clear the stored values
+        $this->storedValues = array();
+
+        //make a copy of the existing values
+        $this->storedValues['AuthMode'] = $transport->getAuthMode();
+        $this->storedValues['Encryption'] = $transport->getEncryption();
+        $this->storedValues['Host'] = $transport->getHost();
+        $this->storedValues['Password'] = $transport->getPassword();
+        $this->storedValues['Port'] = $transport->getPort();
+        $this->storedValues['UserName'] = $transport->getUsername();
+
+        //change the values to the settings
+        $transport->setAuthMode($message->getAdditionalData('AuthMode'));
+        $transport->setEncryption($message->getAdditionalData('Encryption'));
+        $transport->setHost($message->getAdditionalData('Host'));
+        $transport->setPassword($message->getAdditionalData('Password'));
+        $transport->setPort($message->getAdditionalData('Port'));
+        $transport->setUsername($message->getAdditionalData('UserName'));
+
+        //stop and start the transport so it uses the new values and connects to new server
+        $transport->stop();
+        $transport->start();
+    }
+
+    public function transportSendPost(TransportSendEvent $event) {
+        $transport = $event->getTransport();
+        if (!$transport instanceof SmtpTransport)
+            return;
+
+        //make sure all settings are available.
+        foreach (array('AuthMode', 'Encryption', 'Host', 'Password', 'Port', 'UserName') as $settingName)
+            if (!array_key_exists($settingName, $this->storedValues))
+                return;
+
+        //reset the transport values
+        $transport->setAuthMode($this->storedValues['AuthMode']);
+        $transport->setEncryption($this->storedValues['Encryption']);
+        $transport->setHost($this->storedValues['Host']);
+        $transport->setPassword($this->storedValues['Password']);
+        $transport->setPort($this->storedValues['Port']);
+        $transport->setUsername($this->storedValues['UserName']);
+
+        //stop and start the transport so it uses the new values and connects to new server
+        $transport->stop();
+        $transport->start();
+    }
+
+}
+
+?>
+```
+
+2) We then need to connect our listener methods to the events using some container configuration.
+
+In ```services.yml``` for example.
+
+```yml
+services:
+  email_send_listener:
+    class: Namespace\Bundle\Listener\EmailSendListener
+    tags:
+      - { name: kernel.event_listener, event: tdm.swiftmailer.mailer.pre_send_process, method: mailerSend }
+      - { name: kernel.event_listener, event: tdm.swiftmailer.mailer.pre_send_cleanup, method: mailerSendCleanup }
+      - { name: kernel.event_listener, event: tdm.swiftmailer.transport.pre_send_process, method: transportSendPre }
+      - { name: kernel.event_listener, event: tdm.swiftmailer.transport.post_send_cleanup, method: transportSendPost }
+```
+
+Now when we send a message in the code, the listener adds some additional data to the message.  When the spool if flushed later, the listener checks if the needed additional data is supplied and edits the transport object.  It also stores the original values from the trasport object so that the transport object can be returned to its original state once the single message is sent.
+
+
