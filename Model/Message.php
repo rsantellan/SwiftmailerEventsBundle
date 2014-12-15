@@ -40,6 +40,9 @@ class Message extends Swift_Message {
             unset($this->additionalData[$key]);
     }
 
+    public function generateId() {
+      return rand(0, PHP_INT_MAX);
+    }
 }
 
 ?>
